@@ -1,6 +1,6 @@
 /*********
-  Rui Santos
-  Complete project details at http://randomnerdtutorials.com  
+  Adail Horst
+  Inspiration Original code from http://randomnerdtutorials.com 
 *********/
 
 #include <ESP8266WiFi.h>
@@ -19,6 +19,7 @@ String header;
 // Auxiliar variables to store the current output state
 String statusG0 = "off";
 String statusLed = "off";
+String statusBlink = "off";
 
 // Assign output variables to GPIO pins
 const int g0 = 0;
@@ -29,16 +30,13 @@ void setup() {
 
   pinMode(g0, OUTPUT);
   pinMode(led, OUTPUT);
-  digitalWrite(g0, LOW);
-  digitalWrite(led, LOW);
+  digitalWrite(g0, HIGH);
+  digitalWrite(led, HIGH);
 
-  // WiFiManager
-  // Local intialization. Once its business is done, there is no need to keep it around
   WiFiManager wifiManager;
   
   // Uncomment and run it once, if you want to erase all the stored information
   //wifiManager.resetSettings();
-  
   // set custom ip for portal
   //wifiManager.setAPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
 
@@ -46,9 +44,9 @@ void setup() {
   // if it does not connect it starts an access point with the specified name
   // here  "AutoConnectAP"
   // and goes into a blocking loop awaiting configuration
-  wifiManager.autoConnect("AutoConnectAP");
+  //wifiManager.autoConnect("AutoConnectAP");
   // or use this for auto generated name ESP + ChipID
-  //wifiManager.autoConnect();
+  wifiManager.autoConnect();
   
   // if you get here you have connected to the WiFi
   Serial.println("Connected.");
@@ -57,6 +55,9 @@ void setup() {
 }
 
 void loop(){
+  if (statusBlink == "on") {
+    blinkLed ();
+  }
   WiFiClient client = server.available();   // Listen for incoming clients
 
   if (client) {                             // If a new client connects,
@@ -68,11 +69,7 @@ void loop(){
         Serial.write(c);                    // print it out the serial monitor
         header += c;
         if (c == '\n') {                    // if the byte is a newline character
-          // if the current line is blank, you got two newline characters in a row.
-          // that's the end of the client HTTP request, so send a response:
           if (currentLine.length() == 0) {
-            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-            // and a content-type so the client knows what's coming, then a blank line:
             client.println("HTTP/1.1 200 OK");
             client.println("Content-type:text/html");
             client.println("Connection: close");
@@ -99,61 +96,66 @@ void loop(){
             // Display the HTML web page
             client.println("<!DOCTYPE html><html>");
             client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+            // Enable BootSrap
+            client.println("<link href=\"//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css\" rel=\"stylesheet\" id=\"bootstrap-css\">");
+            client.println("<script src=\"//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js\"></script>");
+            client.println("<script src=\"//code.jquery.com/jquery-1.11.1.min.js\"></script>");
+            
             client.println("<link rel=\"icon\" href=\"data:,\">");
-            // CSS to style the on/off buttons 
-            // Feel free to change the background-color and font-size attributes to fit your preferences
             client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
-            client.println(".button { background-color: #195B6A; border: none; color: white; padding: 16px 40px;");
+            //client.println(".button { background-color: #31d100; border: none; color: white; padding: 16px 40px;");
+            //#195B6A / 
             client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
-            client.println(".button2 {background-color: #77878A;}</style></head>");
+            //client.println(".buttonOff {background-color: #77878A;}");
+            client.println("</style></head>");
             
             // Web Page Heading
             client.println("<body><h1>ESP8266/ESP01 Web Server</h1>");
-/*            
-            client.println("<p>GPIO 0 - State " + statusG0 + "</p>");
-            if (statusG0=="off") {
-              client.println("<p><a href=\"/0/on\"><button class=\"button\">ON</button></a></p>");
-            } else {
-              client.println("<p><a href=\"/0/off\"><button class=\"button button2\">OFF</button></a></p>");
-            } 
-            client.println("<p>Board LED - State " + statusLed + "</p>");
-            if (statusLed=="off") {
-              client.println("<p><a href=\"/led/on\"><button class=\"button\">ON</button></a></p>");
-            } else {
-              client.println("<p><a href=\"/led/off\"><button class=\"button button2\">OFF</button></a></p>");
-            } 
-/*
-            client.println(gpioButton ("GPIO 0", 0, (output0State == "off" ? 0 : 1)));
-            client.println(gpioButton ("GPIO 1", 1, (output1State == "off" ? 0 : 1)));
-            client.println(gpioButton ("GPIO 2", 2, (output2State == "off" ? 0 : 1)));
-            client.println(gpioButton ("GPIO 3", 3, (output3State == "off" ? 0 : 1)));
-            client.println("</body></html>");
-*/            
+            // Buttons
             client.println(gpioButton ("GPIO 0", "0", statusG0));
             client.println(gpioButton ("Board Led", "led", statusLed));
+            client.println(gpioButton ("Blink Board Led", "blink", statusBlink));
+            client.println(gpioButton ("Reset WiFi", "reset", ""));
+
+            if (header.indexOf("GET /blink/on") >= 0) {
+              Serial.println("Enable Board LED Blink");
+              statusLed = "on";
+              digitalWrite(led, HIGH);
+            }            
+
+            if (header.indexOf("GET /blink/on") >= 0) {
+              statusBlink = "on";
+              blinkLed ();
+            } else if (header.indexOf("GET /blink/off") >= 0) {
+              v = "off";
+            }
             // The HTTP response ends with another blank line
             client.println();
             // Break out of the while loop
             break;
-          } else { // if you got a newline, then clear currentLine
+          } else { 
             currentLine = "";
           }
-        } else if (c != '\r') {  // if you got anything else but a carriage return character,
-          currentLine += c;      // add it to the end of the currentLine
+        } else if (c != '\r') {  
+          currentLine += c;      
         }
       }
     }
-    // Clear the header variable
     header = "";
-    // Close the connection
     client.stop();
     Serial.println("Client disconnected.");
     Serial.println("");
   }
 }
+void blinkLed () {
+  digitalWrite(led, LOW);   //Liga LED
+  delay(1000);              // aguarda 1 segundo
+  digitalWrite(led, HIGH);  // apaga LED
+  delay(1000);              // Aguarda 1 segundo
+}
 
 String button (String title, String URL, String State) {
-  return "<p><a href=\""+URL+"\"><button class=\"button "+(State == "on" ? "button2" : "")+"\">"+title+"</button></a></p>";
+  return "<p><a href=\""+URL+"\"><button class=\"button btn "+(State == "on" ? "btn-danger" : "btn-success")+"\">"+title+"</button></a></p>";
 }
 
 String gpioButton (String title, String GPIO, String State) {
@@ -161,12 +163,5 @@ String gpioButton (String title, String GPIO, String State) {
   result = "<p>"+title+" - State " + (State == "on" ? "OFF" : "ON") + "</p>";
   String URL = "/"+GPIO+"/"+(State == "on" ? "off" : "on");
   result = result + button (title, URL,State);
-/*  if (State == 0) {
-    result = result + button (title, "/"+GPIO+"\/"+(State != 0 ? "off" : "on"),State);
-    //"<p><a href=\"/"+GPIO+"\/on\"><button class=\"button\">ON</button></a></p>";
-  } else {
-    result = result + 
-    //"<p><a href=\"/"+GPIO+"/off\"><button class=\"button button2\">OFF</button></a></p>";
-  } */
   return result;
 }
