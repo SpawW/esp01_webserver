@@ -1,1 +1,1 @@
-char host[] = "yourhost.herokuapp.com"; // Heroku domain name like
+char host[] = "spawwifttt.herokuapp.com"; // Heroku domain name like
