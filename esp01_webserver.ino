@@ -8,10 +8,21 @@
 #include <ESP8266WebServer.h>
 #include <WiFiManager.h>         // https://github.com/tzapu/WiFiManager
 
+// Libs for IFTTT integration
+#include <ArduinoJson.h>
+#include <WebSocketsClient.h>
+#include <Hash.h>
+#include <ESP8266WiFiMulti.h>
+
+
 #define DEBUG
 
 // Set web server port number to 80
 WiFiServer server(80);
+
+
+// --------------------======= Variables =========---------------------------------
+#include "credentials.h"
 
 // Variable to store the HTTP request
 String header;
@@ -26,6 +37,111 @@ String statusLed = "on";
 String statusBlink = "on";
 
 const int led = 2;
+
+// -- Variables IFTTT
+int port = 80;
+char path[] = "/ws"; 
+ESP8266WiFiMulti WiFiMulti;
+WebSocketsClient webSocket;
+const int relayPin = 16;
+DynamicJsonBuffer jsonBuffer;
+String currState;
+int pingCount = 0;
+
+void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) { //uint8_t *
+
+  switch(type) {
+    case WStype_DISCONNECTED:
+       Serial.println("Disconnected! ");
+       Serial.println("Connecting...");
+           webSocket.begin(host, port, path);
+           webSocket.onEvent(webSocketEvent);
+        break;
+        
+    case WStype_CONNECTED:
+        {
+         Serial.println("Connected! ");
+      // send message to server when Connected
+        webSocket.sendTXT("Connected");
+        }
+        break;
+        
+    case WStype_TEXT:
+        Serial.println("Got data");
+          //data = (char*)payload;
+       processWebScoketRequest((char*)payload);
+        break;
+        
+    case WStype_BIN:
+
+        hexdump(payload, length);
+        Serial.print("Got bin");
+        // send data to server
+        webSocket.sendBIN(payload, length);
+        break;
+  }
+
+}
+
+void processWebScoketRequest(String data){
+
+  JsonObject& root = jsonBuffer.parseObject(data);
+  String device = (const char*)root["device"];
+  String location = (const char*)root["location"];
+  String state = (const char*)root["state"];
+  String query = (const char*)root["query"];
+  int switchNumber = (const int)root["number"];
+  String message="";
+//{"location":"kitchen","device":"lights", "state":"on","query":"cmd","number": 0}
+
+  Serial.println(data);
+  Serial.println(state);
+  if(query == "cmd"){ //if query check state
+    Serial.println("Recieved command!");
+    int c;
+    if(state=="on"){
+      digitalWrite(switchId[switchNumber], HIGH);
+      message = "{\"state\":\"ON\"}";
+      currState = "ON";
+    }else if (state == "off") {
+      digitalWrite(switchId[switchNumber], LOW);
+      message = "{\"state\":\"OFF\"}";
+      currState = "OFF";
+    } else if(state=="onall"){
+      for( c = 0; c < 8; c = c + 1 ){
+        digitalWrite(switchId[c], HIGH);
+      }
+      message = "{\"state\":\"ONALL\"}";
+      currState = "ON";
+    }else if(state=="offall"){
+      for( c = 0; c < 8; c = c + 1 ){
+        digitalWrite(switchId[c], LOW);
+      }
+      message = "{\"state\":\"OFFALL\"}";
+      currState = "OFF";
+    }
+        
+  }else if(query == "?"){ //if command then execute   
+    Serial.println("Recieved query!");
+    int state = digitalRead(relayPin);
+    if(currState=="ON"){
+      message = "{\"state\":\"ON\"}";
+    }else{
+      message = "{\"state\":\"OFF\"}";
+    }
+  }else{//can not recognized the command
+    Serial.println("Command is not recognized!");
+  }
+  Serial.print("Sending response back");
+  Serial.println(message);
+  // send message to server
+  webSocket.sendTXT(message);
+  if(query == "cmd" || query == "?"){webSocket.sendTXT(message);}
+}
+
+
+// Funcoes padroes
+
 
 void setup() {
   Serial.begin(115200);
@@ -59,12 +175,31 @@ void setup() {
   Serial.println("Connected.");
   
   server.begin();
+
+  webSocket.begin(host, port, path);
+  webSocket.onEvent(webSocketEvent);
+
 }
 
 void loop(){
   if (statusBlink == "on") {
     blinkLed ();
   }
+
+  webSocket.loop();
+  //If you make change to delay make sure adjust the ping
+  delay(2000);
+  // make sure after every 40 seconds send a ping to Heroku
+  //so it does not terminate the websocket connection
+  //This is to keep the conncetion alive between ESP and Heroku
+  if (pingCount > 20) {
+    pingCount = 0;
+    webSocket.sendTXT("\"heartbeat\":\"keepalive\"");
+  }
+  else {
+    pingCount += 1;
+  }
+  
   WiFiClient client = server.available();   // Listen for incoming clients
 
   if (client) {                             // If a new client connects,
@@ -114,20 +249,23 @@ void loop(){
             client.println("<!DOCTYPE html><html>");
             client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
             // Enable BootSrap
-            client.println("<link href=\"//netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap.min.css\" rel=\"stylesheet\" id=\"bootstrap-css\">");
-            client.println("<script src=\"//netdna.bootstrapcdn.com/bootstrap/3.0.0/js/bootstrap.min.js\"></script>");
+            client.println("<link href=\"//netdna.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css\" rel=\"stylesheet\" id=\"bootstrap-css\">");
+            client.println("<script src=\"//netdna.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js\"></script>");
             client.println("<script src=\"//code.jquery.com/jquery-1.11.1.min.js\"></script>");
             
             client.println("<link rel=\"icon\" href=\"data:,\">");
             client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
-            //client.println(".button { background-color: #31d100; border: none; color: white; padding: 16px 40px;");
-            //#195B6A / 
+
             client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
             //client.println(".buttonOff {background-color: #77878A;}");
+            client.println(".w-20 { -webkit-box-flex: 0; -ms-flex: 0 0 20% !important; flex: 0 0 20% !important;  max-width: 20%;}");
             client.println("</style></head>");
             
             // Web Page Heading
-            client.println("<body><h1>"+WiFi.hostname()+" Web Server</h1>");
+            client.println("<body>");
+            client.println("<div class=\"container\"><div class=\"row my-4\"><div class=\"col\"><div class=\"jumbotron\">");
+            client.println("<h1>Welcome to "+WiFi.hostname()+" Web Server</h1>");
+            client.println("<div class=\"container-fluid\"><div class=\"row row-cols-5\">");
             // Buttons
             int a;
             for( a = 0; a < 8; a = a + 1 ){
@@ -142,12 +280,18 @@ void loop(){
               }
               client.println(gpioButton (title, id, newStatus));
             }
-            //client.println(gpioButton ("Switch 1", "1", statusG1));
-            //client.println(gpioButton ("Switch 2", "2", statusG2));
-            //client.println(gpioButton ("Switch 3", "3", statusG3));
+
+            client.println("</div><div class=\"row row-cols-5\">");
             client.println(gpioButton ("Board Led", "led", statusLed));
             client.println(gpioButton ("Blink Board Led", "blink", statusBlink));
             client.println(gpioButton ("Reset WiFi", "reset", ""));
+            client.println("</div></div>");
+            
+            client.println("</div></div></div></div>");
+
+            client.println("</body>");
+            client.println("</html>");
+
 
             if (header.indexOf("GET /blink/on") >= 0) {
               Serial.println("Enable Board LED Blink");
@@ -192,8 +336,8 @@ String button (String title, String URL, String State) {
 
 String gpioButton (String title, String GPIO, String State) {
   String result = "";
-  result = "<p>"+title+" - State " + (State == "on" ? "OFF" : "ON") + "</p>";
+  result = "<p>"+title+" - " + (State == "on" ? "OFF" : "ON") + "</p>";
   String URL = "/"+GPIO+"/"+(State == "on" ? "off" : "on");
   result = result + button (title, URL,State);
-  return result;
+  return "<div class=\"col card card-body\">" + result +"</div>";
 }
