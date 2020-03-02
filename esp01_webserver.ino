@@ -17,20 +17,27 @@ WiFiServer server(80);
 String header;
 
 // Auxiliar variables to store the current output state
-String statusG0 = "off";
-String statusLed = "off";
-String statusBlink = "off";
+String newStatus = "on";
 
-// Assign output variables to GPIO pins
-const int g0 = 0;
+int switchStatus[] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+int switchId[] = {16, 5, 4, 0, 0, 0, 0, 0, 0};
+
+String statusLed = "on";
+String statusBlink = "on";
+
 const int led = 2;
 
 void setup() {
   Serial.begin(115200);
 
-  pinMode(g0, OUTPUT);
+  Serial.print("ESP Board MAC Address:  ");
+  Serial.println(WiFi.macAddress());
+  int c;
+  for( c = 0; c < 8; c = c + 1 ){
+    pinMode(switchId[c], OUTPUT);
+    digitalWrite(switchId[c], HIGH);
+  }
   pinMode(led, OUTPUT);
-  digitalWrite(g0, HIGH);
   digitalWrite(led, HIGH);
 
   WiFiManager wifiManager;
@@ -74,15 +81,25 @@ void loop(){
             client.println("Content-type:text/html");
             client.println("Connection: close");
             client.println();
-            if (header.indexOf("GET /0/on") >= 0) {
-              Serial.println("GPIO 0 on");
-              statusG0 = "on";
-              digitalWrite(g0, HIGH);
-            } else if (header.indexOf("GET /0/off") >= 0) {
-              Serial.println("GPIO 0 off");
-              statusG0 = "off";
-              digitalWrite(g0, LOW);
+            int b;
+            char urlOn[12];
+            char urlOff[12];
+            for( b = 0; b < 8; b = b + 1 ){
+              snprintf(urlOn, 12, "GET /%d/on", b);
+              snprintf(urlOff, 12, "GET /%d/off", b);
+              if (header.indexOf(urlOn) >= 0) {
+                Serial.println("GPIO on");
+                switchStatus[b] = 1;
+                digitalWrite(switchId[b], HIGH);
+              }
+              if (header.indexOf(urlOff) >= 0) {
+                Serial.println("GPIO off");
+                switchStatus[b] = 0;
+                digitalWrite(switchId[b], LOW);
+              }
+              Serial.println(b);
             }
+
             if (header.indexOf("GET /led/on") >= 0) {
               Serial.println("Board LED on");
               statusLed = "on";
@@ -110,9 +127,24 @@ void loop(){
             client.println("</style></head>");
             
             // Web Page Heading
-            client.println("<body><h1>ESP8266/ESP01 Web Server</h1>");
+            client.println("<body><h1>"+WiFi.hostname()+" Web Server</h1>");
             // Buttons
-            client.println(gpioButton ("GPIO 0", "0", statusG0));
+            int a;
+            for( a = 0; a < 8; a = a + 1 ){
+              char title[30];
+              char id[2];
+              snprintf(title, 30, "Switch %d", a);
+              snprintf(id, 2, "%d", a);
+              if (switchStatus[a] == 1) {
+                newStatus = "on";
+              } else {
+                newStatus = "off";
+              }
+              client.println(gpioButton (title, id, newStatus));
+            }
+            //client.println(gpioButton ("Switch 1", "1", statusG1));
+            //client.println(gpioButton ("Switch 2", "2", statusG2));
+            //client.println(gpioButton ("Switch 3", "3", statusG3));
             client.println(gpioButton ("Board Led", "led", statusLed));
             client.println(gpioButton ("Blink Board Led", "blink", statusBlink));
             client.println(gpioButton ("Reset WiFi", "reset", ""));
@@ -127,7 +159,7 @@ void loop(){
               statusBlink = "on";
               blinkLed ();
             } else if (header.indexOf("GET /blink/off") >= 0) {
-              v = "off";
+              statusBlink = "off";
             }
             // The HTTP response ends with another blank line
             client.println();
