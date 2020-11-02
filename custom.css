@@ -3,5 +3,20 @@
 	flex: 1 1 auto;
 	min-height: 1px;
 	padding: 1.25rem;
-	min-width: 120px;
+	min-width: 135px;
 }
+
+html { 
+	font-family: Helvetica; 
+	display: inline-block; 
+	margin: 0px auto; 
+	text-align: center;
+} 
+
+} 
+.w-20 { 
+	-webkit-box-flex: 0; 
+	-ms-flex: 0 0 20% !important; 
+	flex: 0 0 20% !important; 
+	max-width: 20%;
+} 
